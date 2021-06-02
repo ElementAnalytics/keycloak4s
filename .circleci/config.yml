@@ -11,7 +11,7 @@ shared-config:
 
   caches:
     # Use the digits to bust the cache if needed.
-    sbt-build-cache:  &sbt-build-cache  sbt-cache-1-{{ checksum "build.sbt" }}-{{ checksum "project/Versions.scala" }}
+    sbt-build-cache:  &sbt-build-cache  sbt-cache-1-{{ checksum "build.sbt" }}
     sbt-plugin-cache: &sbt-plugin-cache sbt-coverage-cache-1-{{ checksum "project/plugins.sbt" }}
 # }}}
 
