@@ -1,8 +1,5 @@
 import sbt.Keys.{credentials, publishMavenStyle}
-import ReleaseTransformations._
 import sbt.{Credentials, url}
-import sbtrelease.Version.Bump.Bugfix
-import xerial.sbt.Sonatype.GitHubHosting
 
 val baseScalaOpts = Seq(
   "-Ywarn-unused:implicits",
@@ -27,6 +24,25 @@ val baseScalaOpts = Seq(
 val scalac213Opts = baseScalaOpts
 val scalac212Opts = baseScalaOpts ++ Seq("-Ypartial-unification")
 
+val nexus = "https://ean.jfrog.io"
+val elementSnapshotRepo = "snapshots" at nexus + "/ean/sbt-dev-local"
+val elementReleaseRepo = "releases" at nexus + "/ean/sbt-release-local"
+
+val artifactory =
+  Credentials.toDirect(Credentials(Path.userHome / ".sbt" / ".credentials"))
+
+val publishSettings = Seq(
+  Compile / publishArtifact := true,
+  Test / publishArtifact := false,
+  Test / packageDoc / publishArtifact := false,
+  credentials += artifactory,
+  publishMavenStyle := true,
+  publishTo := {
+    if (isSnapshot.value) Some(elementSnapshotRepo)
+    else Some(elementReleaseRepo)
+  }
+)
+
 lazy val global = {
   Seq(
     scalaVersion  := "2.13.5",
@@ -43,70 +59,6 @@ lazy val global = {
     Test / classLoaderLayeringStrategy := ClassLoaderLayeringStrategy.ScalaLibrary,
 
     crossScalaVersions := Seq(scalaVersion.value, "2.12.13"),
-
-    // Your profile name of the sonatype account. The default is the same with the organization value
-    sonatypeProfileName := "com.fullfacing",
-
-    publishTo := sonatypePublishToBundle.value,
-    publishConfiguration := publishConfiguration.value.withOverwrite(true),
-    publishLocalConfiguration := publishLocalConfiguration.value.withOverwrite(true),
-
-    // To sync with Maven central, you need to supply the following information:
-    publishMavenStyle := true,
-
-    // MIT Licence
-    licenses  := Seq("MIT" -> url("http://opensource.org/licenses/MIT")),
-  
-    // Github Project Information
-    sonatypeProjectHosting := Some(GitHubHosting("fullfacing", "keycloak4s", "curious@fullfacing.com")),
-  
-    // Developer Contact Information
-    developers := List(
-      Developer(
-        id    = "Executioner1939",
-        name  = "Richard Peters",
-        email = "rpeters@fullfacing.com",
-        url   = url("https://www.fullfacing.com/")
-      ),
-      Developer(
-        id    = "lmuller90",
-        name  = "Louis Muller",
-        email = "lmuller@fullfacing.com",
-        url   = url("https://www.fullfacing.com/")
-      ),
-      Developer(
-        id    = "StuartJ45",
-        name  = "Stuart Jameson",
-        email = "sjameson@fullfacing.com",
-        url   = url("https://www.fullfacing.com/")
-      ),
-      Developer(
-        id    = "neil-fladderak",
-        name  = "Neil Fladderak",
-        email = "neil@fullfacing.com",
-        url   = url("https://www.fullfacing.com/")
-      )
-    ),
-
-    releaseCommitMessage := s"[skip ci] Setting version to ${(ThisBuild / version).value}",
-    releaseNextCommitMessage := s"[skip ci] Setting version to ${(ThisBuild / version).value}",
-    releaseIgnoreUntrackedFiles := true,
-    releasePublishArtifactsAction := PgpKeys.publishSigned.value,
-    releaseCrossBuild := true,
-    releaseVersionBump := Bugfix,
-    releaseProcess := Seq[ReleaseStep](
-      checkSnapshotDependencies,
-      inquireVersions,
-      runClean,
-      setReleaseVersion,
-      tagRelease,
-      pushChanges,
-      releaseStepCommandAndRemaining("+publishSigned"),
-      releaseStepCommand("sonatypeBundleRelease"),
-      setNextVersion,
-      commitNextVersion,
-      pushChanges
-    )
   )
 }
 
@@ -195,25 +147,28 @@ lazy val coreDependencies: Seq[ModuleID] = cats ++ json4s ++ logback ++ enumerat
 
 lazy val `keycloak4s-core` = (project in file("./keycloak4s-core"))
   .settings(global: _*)
+  .settings(publishSettings)
   .settings(libraryDependencies ++= coreDependencies)
-  .settings(name := "keycloak4s-core", publishArtifact := true)
+  .settings(name := "keycloak4s-core")
 
 // ---------------------------------------------- //
 // Project and configuration for keycloak4s-admin //
 // ---------------------------------------------- //
 lazy val `keycloak4s-admin` = (project in file("./keycloak4s-admin"))
   .settings(global: _*)
+  .settings(publishSettings)
   .settings(libraryDependencies ++= sttp)
-  .settings(name := "keycloak4s-admin", publishArtifact := true)
+  .settings(name := "keycloak4s-admin")
   .dependsOn(`keycloak4s-core`)
 
 // ---------------------------------------------------- //
 // Project and configuration for keycloak4s-admin-monix //
 // ---------------------------------------------------- //
 lazy val `keycloak4s-monix` = (project in file("./keycloak4s-admin-monix"))
+  .settings(publishSettings)
   .settings(global: _*)
   .settings(libraryDependencies ++= monix)
-  .settings(name := "keycloak4s-admin-monix", publishArtifact := true)
+  .settings(name := "keycloak4s-admin-monix")
   .dependsOn(`keycloak4s-admin`)
 
 // ---------------------------------------------------- //
@@ -221,8 +176,9 @@ lazy val `keycloak4s-monix` = (project in file("./keycloak4s-admin-monix"))
 // ---------------------------------------------------- //
 lazy val `keycloak4s-monix-bio` = (project in file("./keycloak4s-admin-monix-bio"))
   .settings(global: _*)
+  .settings(publishSettings)
   .settings(libraryDependencies ++= `monix-bio` ++ sttp)
-  .settings(name := "keycloak4s-admin-monix-bio", publishArtifact := true)
+  .settings(name := "keycloak4s-admin-monix-bio")
   .dependsOn(`keycloak4s-core`)
 
 // ------------------------------------------------------- //
@@ -230,8 +186,9 @@ lazy val `keycloak4s-monix-bio` = (project in file("./keycloak4s-admin-monix-bio
 // ------------------------------------------------------- //
 lazy val `keycloak4s-auth-core` = (project in file("./keycloak4s-auth/core"))
   .settings(global: _*)
+  .settings(publishSettings)
   .settings(libraryDependencies ++= nimbus)
-  .settings(name := "keycloak4s-auth-core", publishArtifact := true)
+  .settings(name := "keycloak4s-auth-core")
   .dependsOn(`keycloak4s-core`)
 
 // ------------------------------------------------------- //
@@ -239,8 +196,9 @@ lazy val `keycloak4s-auth-core` = (project in file("./keycloak4s-auth/core"))
 // ------------------------------------------------------- //
 lazy val `keycloak4s-akka-http` = (project in file("./keycloak4s-auth/akka-http"))
   .settings(global: _*)
+  .settings(publishSettings)
   .settings(libraryDependencies ++= akkaHttp)
-  .settings(name := "keycloak4s-auth-akka-http", publishArtifact := true)
+  .settings(name := "keycloak4s-auth-akka-http")
   .dependsOn(`keycloak4s-auth-core`)
 
 // ------------------------------------------------------- //
@@ -248,7 +206,8 @@ lazy val `keycloak4s-akka-http` = (project in file("./keycloak4s-auth/akka-http"
 // ------------------------------------------------------- //
 lazy val `keycloak4s-authz` = (project in file("./keycloak4s-authz-client"))
   .settings(global: _*)
-  .settings(name := "keycloak4s-authz-client", publishArtifact := true)
+  .settings(publishSettings)
+  .settings(name := "keycloak4s-authz-client")
 
 // --------------------------------------------------- //
 // Project and configuration for keycloak4s-playground //

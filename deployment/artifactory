@@ -1,0 +1,10 @@
+#!/bin/bash
+
+echo "Deploying to Artifactory"
+
+targets=(
+    +keycloak4s-core/publish
+    +keycloak4s-admin/publish
+)
+
+sbt "${targets[@]}"

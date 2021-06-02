@@ -1,96 +1,147 @@
-version: 2.1
+version: 2
+
+# {{{ Shared configuration
+shared-config:
+  images:
+    circleci-openjdk-custom: &circleci-openjdk-custom ean-docker-virtual.jfrog.io/elementanalytics/circleci-openjdk-custom:2.0.2
+
+  artifactory-auth: &artifactoryAuth
+    username: $ARTIFACTORY_PUBLISH_USER
+    password: $ARTIFACTORY_PUBLISH_TOKEN
+
+  caches:
+    # Use the digits to bust the cache if needed.
+    sbt-build-cache:  &sbt-build-cache  sbt-cache-1-{{ checksum "build.sbt" }}-{{ checksum "project/Versions.scala" }}
+    sbt-plugin-cache: &sbt-plugin-cache sbt-coverage-cache-1-{{ checksum "project/plugins.sbt" }}
+# }}}
+
 jobs:
-  test_213:
-    working_directory: ~/code
+  build:
+    working_directory: ~/keycloak4s
     docker:
-        - image: circleci/openjdk:latest
-        - image: jboss/keycloak:latest
-          environment:
-            KEYCLOAK_USER: "admin"
-            KEYCLOAK_PASSWORD: "admin"
+      - image: *circleci-openjdk-custom
+        auth: *artifactoryAuth
     environment:
-      - _JAVA_OPTIONS: -XX:MaxMetaspaceSize=1536m
-    steps:
-      - checkout
-      - run:
-          name: Wait for Keycloak Server
-          command: dockerize -wait tcp://localhost:8080 -timeout 5m
-      - run:
-          name: Run Tests
-          command: sbt ++2.13.5! clean test
-  test_212:
-    working_directory: ~/code
-    docker:
-      - image: circleci/openjdk:latest
-      - image: jboss/keycloak:latest
-        environment:
-          KEYCLOAK_USER: "admin"
-          KEYCLOAK_PASSWORD: "admin"
-    environment:
-      - _JAVA_OPTIONS: -XX:MaxMetaspaceSize=1536m
-    steps:
-      - checkout
-      - run:
-          name: Wait for Keycloak Server
-          command: dockerize -wait tcp://localhost:8080 -timeout 5m
-      - run:
-          name: Run Tests
-          command: sbt ++2.12.12! clean coverage test coverageReport
-      - run:
-          name: Upload Reports
-          command: |
-            bash <(curl -s https://codecov.io/bash)
-  Publish-And-Release:
-    docker:
-      - image: circleci/openjdk:latest
-    working_directory: ~/code
-    environment:
-      - _JAVA_OPTIONS: -XX:MaxMetaspaceSize=1536m
+      - SCALA_VERSION: 2.12.12
+      - SBT_VERSION: 1.4.2
     steps:
       - checkout
       - restore_cache:
-          key: sbt-cache-0
-      - add_ssh_keys:
-          fingerprints:
-            - "87:c4:7d:c6:43:42:40:6c:38:54:75:72:79:6d:e0:de"
+          key: *sbt-build-cache
       - run:
-          name: Import PGP Key
+          name: credentials
           command: |
-            sudo rm -rf /var/lib/apt/lists/* && sudo apt-get update
-            sudo apt-get install -y dos2unix
-            echo -e "$PGP_KEY" > key.asc
-            dos2unix key.asc
-            gpg --import key.asc
+            mkdir -p ~/.sbt || true
+            deployment/credentials
       - run:
-          name: Set Git Config
-          command: |
-            git push --set-upstream origin master
-            git config --global user.email "shadowrhyder@gmail.com"
-            git config --global user.name "Richard"
+          name: scalafmt check
+          command:
+            sbt clean scalafmtSbtCheck scalafmtCheck
       - run:
-          name: Compile JAR
-          command: sbt 'release with-defaults'
+          name: compile
+          command:
+            sbt -mem 2048 clean test:compile package
       - save_cache:
-          key: sbt-cache-0
+          key: *sbt-build-cache
           paths:
-            - "~/.m2"
-            - "~/.sbt"
             - "~/.ivy2/cache"
+            - "~/.sbt"
+            - "~/.coursier"
+            - "~/.cache/coursier"
+            - "~/.m2"
+      - persist_to_workspace:
+          # Must be an absolute path, or relative path from working_directory.
+          # This is a directory on the container which is taken to be the root
+          # directory of the workspace.
+          root: ~/keycloak4s
+          # Must be relative path from root
+          paths:
+            - target
+            - keycloak4s-core/target
+            - keycloak4s-admin/target
+            - keycloak4s-admin-monix/target
+            - keycloak4s-auth/target
+            - keycloak4s-playground/target
+  test:
+    working_directory: ~/keycloak4s
+    docker:
+      - image: *circleci-openjdk-custom
+        auth: *artifactoryAuth
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ~/keycloak4s
+      - restore_cache:
+          key: *sbt-plugin-cache
+      - run: deployment/credentials
+      - run: sbt -mem 2048 coverage test coverageReport coverageAggregate
+      - save_cache:
+          key: *sbt-plugin-cache
+          paths:
+            - "~/.ivy2/cache"
+            - "~/.sbt"
+            - "~/.coursier"
+            - "~/.cache/coursier"
+            - "~/.m2"
+  license:
+    working_directory: ~/keycloak4s
+    docker:
+      - image: *circleci-openjdk-custom
+        auth: *artifactoryAuth
+    steps:
+      - checkout
+      - attach_workspace:
+          at: ~/keycloak4s
+      - restore_cache:
+          key: *sbt-plugin-cache
+      - run: deployment/credentials
+      - run: sbt dumpLicenseReport
+      - run: mkdir /tmp/license-report
+      - run: mv target/license-reports/keycloak4s-licenses.html /tmp/license-report/index.html
+      - store_artifacts:
+          path: /tmp/license-report
+  publish:
+    working_directory: ~/keycloak4s
+    docker:
+      - image: *circleci-openjdk-custom
+        auth: *artifactoryAuth
+    steps:
+      - setup_remote_docker
+      - checkout
+      - attach_workspace:
+          at: ~/keycloak4s
+      - restore_cache:
+          key: *sbt-build-cache
+      - run: deployment/credentials
+      - run: deployment/artifactory
+
 workflows:
-  deployment:
+  version: 2
+  build-and-deploy:
     jobs:
-      - test_212:
+      - build:
+          context: org-global
           filters:
-            branches:
-              ignore:
-                - master
-      - test_213:
+            tags:
+              only: /^v[0-9].*/
+      - test:
+          requires:
+            - build
+          context: org-global
           filters:
-            branches:
-              ignore:
-                - master
-      - Publish-And-Release:
+            tags:
+              only: /^v[0-9].*/
+      - license:
+          requires:
+            - build
+          context: org-global
           filters:
-            branches:
-              only:
-                - master
+            tags:
+              only: /^v[0-9].*/
+      - publish:
+          requires:
+            - test
+          context: org-global
+          filters:
+            tags:
+              only: /^v[0-9].*/
