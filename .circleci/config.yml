@@ -93,7 +93,7 @@ jobs:
       - run: deployment/credentials
       - run: sbt dumpLicenseReport
       - run: mkdir /tmp/license-report
-      - run: mv target/license-reports/keycloak4s-licenses.html /tmp/license-report/index.html
+      - run: mv target/license-reports/root-licenses.html /tmp/license-report/index.html
       - store_artifacts:
           path: /tmp/license-report
   publish:
