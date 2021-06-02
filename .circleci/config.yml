@@ -70,7 +70,7 @@ jobs:
       - restore_cache:
           key: *sbt-plugin-cache
       - run: deployment/credentials
-      - run: sbt -mem 2048 coverage test coverageReport coverageAggregate
+      - run: sbt -mem 2048 test
       - save_cache:
           key: *sbt-plugin-cache
           paths:
